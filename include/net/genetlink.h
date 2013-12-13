@@ -306,5 +306,12 @@ static inline struct sk_buff *genlmsg_new(size_t payload, gfp_t flags)
 	return nlmsg_new(genlmsg_total_size(payload), flags);
 }
 
+#define genl_info_snd_portid(__genl_info) (__genl_info->snd_pid)
+
+#ifndef GENLMSG_DEFAULT_SIZE
+#define GENLMSG_DEFAULT_SIZE (NLMSG_DEFAULT_SIZE - GENL_HDRLEN)
+#endif
+
+#define genl_dump_check_consistent(cb, user_hdr, family)
 
 #endif	/* __NET_GENERIC_NETLINK_H */

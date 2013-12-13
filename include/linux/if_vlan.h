@@ -17,6 +17,7 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
+#include <linux/netdev_features.h>
 
 #define VLAN_HLEN	4		/* The additional bytes (on top of the Ethernet header)
 					 * that VLAN requires.
@@ -440,5 +441,13 @@ struct vlan_ioctl_args {
 
 	short vlan_qos;   
 };
+
+static inline bool vlan_hw_offload_capable(netdev_features_t features,
+					   __be16 proto)
+{
+	if (proto == htons(ETH_P_8021Q) && features & NETIF_F_HW_VLAN_CTAG_TX)
+		return true;
+	return false;
+}
 
 #endif /* !(_LINUX_IF_VLAN_H_) */

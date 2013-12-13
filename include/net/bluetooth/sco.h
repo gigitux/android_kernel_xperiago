@@ -72,9 +72,8 @@ struct sco_conn {
 
 struct sco_pinfo {
 	struct bt_sock	bt;
-	struct bt_sco_parameters	param;
-	__u8	no_autoretry;
-
+	__u32		flags;
+	__u16		setting;
 	struct sco_conn	*conn;
 };
 

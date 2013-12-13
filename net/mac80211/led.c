@@ -11,6 +11,9 @@
 #include <linux/slab.h>
 #include "led.h"
 
+#define MAC80211_BLINK_DELAY 50 /* ms */
+#define led_set_brightness(_dev, _switch) led_brightness_set(_dev, _switch)
+
 void ieee80211_led_rx(struct ieee80211_local *local)
 {
 	if (unlikely(!local->rx_led))
@@ -21,14 +24,11 @@ void ieee80211_led_rx(struct ieee80211_local *local)
 		led_trigger_event(local->rx_led, LED_FULL);
 }
 
-/* q is 1 if a packet was enqueued, 0 if it has been transmitted */
-void ieee80211_led_tx(struct ieee80211_local *local, int q)
+void ieee80211_led_tx(struct ieee80211_local *local)
 {
 	if (unlikely(!local->tx_led))
 		return;
-	/* not sure how this is supposed to work ... */
-	local->tx_led_counter += 2*q-1;
-	if (local->tx_led_counter % 2 == 0)
+	if (local->tx_led_counter++ % 2 == 0)
 		led_trigger_event(local->tx_led, LED_OFF);
 	else
 		led_trigger_event(local->tx_led, LED_FULL);
@@ -275,7 +275,7 @@ static void ieee80211_stop_tpt_led_trig(struct ieee80211_local *local)
 
 	read_lock(&tpt_trig->trig.leddev_list_lock);
 	list_for_each_entry(led_cdev, &tpt_trig->trig.led_cdevs, trig_list)
-		led_brightness_set(led_cdev, LED_OFF);
+		led_set_brightness(led_cdev, LED_OFF);
 	read_unlock(&tpt_trig->trig.leddev_list_lock);
 }
 

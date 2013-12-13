@@ -2744,6 +2744,14 @@ do {								\
 })
 #endif
 
+static inline void netdev_attach_ops(struct net_device *dev,
+		       const struct net_device_ops *ops)
+{
+	dev->netdev_ops = ops;
+}
+
+#define netdev_notifier_info_to_dev(ndev) ndev
+
 #endif /* __KERNEL__ */
 
 #endif	/* _LINUX_NETDEVICE_H */
