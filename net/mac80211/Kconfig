@@ -4,7 +4,6 @@ config MAC80211
 	depends on CRYPTO
 	depends on CRYPTO_ARC4
 	depends on CRYPTO_AES
-	depends on CRC32
 	select AVERAGE
 	---help---
 	  This option enables the hardware independent IEEE 802.11
