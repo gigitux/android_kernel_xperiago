@@ -41,7 +41,7 @@
 #define TTY_BREAK_ON		(-1)
 #define TTY_BREAK_OFF		(0)
 
-static int reset;
+static bool reset;
 
 static struct hci_uart_proto *hup[HCI_UART_MAX_PROTO];
 
@@ -57,6 +57,7 @@ int cg2900_hci_uart_register_proto(struct hci_uart_proto *p)
 
 	return 0;
 }
+EXPORT_SYMBOL(cg2900_hci_uart_register_proto);
 
 int cg2900_hci_uart_unregister_proto(struct hci_uart_proto *p)
 {
@@ -70,6 +71,7 @@ int cg2900_hci_uart_unregister_proto(struct hci_uart_proto *p)
 
 	return 0;
 }
+EXPORT_SYMBOL(cg2900_hci_uart_unregister_proto);
 
 static struct hci_uart_proto *hci_uart_get_proto(unsigned int id)
 {
@@ -154,6 +156,7 @@ restart:
 	clear_bit(HCI_UART_SENDING, &hu->tx_state);
 	return 0;
 }
+EXPORT_SYMBOL(cg2900_hci_uart_tx_wakeup);
 
 int cg2900_hci_uart_set_break(struct hci_uart *hu, bool break_on)
 {
@@ -168,6 +171,7 @@ int cg2900_hci_uart_set_break(struct hci_uart *hu, bool break_on)
 	else
 		return -EOPNOTSUPP;
 }
+EXPORT_SYMBOL(cg2900_hci_uart_set_break);
 
 void cg2900_hci_uart_flow_ctrl(struct hci_uart *hu, bool flow_on)
 {
@@ -176,6 +180,7 @@ void cg2900_hci_uart_flow_ctrl(struct hci_uart *hu, bool flow_on)
 	else
 		tty_throttle(hu->tty);
 }
+EXPORT_SYMBOL(cg2900_hci_uart_flow_ctrl);
 
 int cg2900_hci_uart_set_baudrate(struct hci_uart *hu, int baud)
 {
@@ -198,6 +203,7 @@ int cg2900_hci_uart_set_baudrate(struct hci_uart *hu, int baud)
 
 	return 0;
 }
+EXPORT_SYMBOL(cg2900_hci_uart_set_baudrate);
 
 int cg2900_hci_uart_tiocmget(struct hci_uart *hu)
 {
@@ -208,16 +214,19 @@ int cg2900_hci_uart_tiocmget(struct hci_uart *hu)
 
 	return tty->ops->tiocmget(tty);
 }
+EXPORT_SYMBOL(cg2900_hci_uart_tiocmget);
 
 void cg2900_hci_uart_flush_buffer(struct hci_uart *hu)
 {
 	tty_driver_flush_buffer(hu->tty);
 }
+EXPORT_SYMBOL(cg2900_hci_uart_flush_buffer);
 
 int cg2900_hci_uart_chars_in_buffer(struct hci_uart *hu)
 {
 	return tty_chars_in_buffer(hu->tty);
 }
+EXPORT_SYMBOL(cg2900_hci_uart_chars_in_buffer);
 
 /* ------- Interface to HCI layer ------ */
 /* Initialize device */
@@ -235,7 +244,7 @@ static int hci_uart_open(struct hci_dev *hdev)
 /* Reset device */
 static int hci_uart_flush(struct hci_dev *hdev)
 {
-	struct hci_uart *hu  = (struct hci_uart *) hdev->driver_data;
+	struct hci_uart *hu  = hci_get_drvdata(hdev);
 	struct tty_struct *tty = hu->tty;
 
 	BT_DBG("hdev %p tty %p", hdev, tty);
@@ -268,9 +277,8 @@ static int hci_uart_close(struct hci_dev *hdev)
 }
 
 /* Send frames from HCI layer */
-static int hci_uart_send_frame(struct sk_buff *skb)
+static int hci_uart_send_frame(struct hci_dev* hdev, struct sk_buff *skb)
 {
-	struct hci_dev* hdev = (struct hci_dev *) skb->dev;
 	struct hci_uart *hu;
 
 	if (!hdev) {
@@ -281,7 +289,7 @@ static int hci_uart_send_frame(struct sk_buff *skb)
 	if (!test_bit(HCI_RUNNING, &hdev->flags))
 		return -EBUSY;
 
-	hu = (struct hci_uart *) hdev->driver_data;
+	hu = hci_get_drvdata(hdev);
 
 	BT_DBG("%s: type %d len %d", hdev->name, bt_cb(skb)->pkt_type,
 	       skb->len);
@@ -291,15 +299,6 @@ static int hci_uart_send_frame(struct sk_buff *skb)
 	hci_uart_tx_wakeup(hu);
 
 	return 0;
-}
-
-static void hci_uart_destruct(struct hci_dev *hdev)
-{
-	if (!hdev)
-		return;
-
-	BT_DBG("%s", hdev->name);
-	kfree(hdev->driver_data);
 }
 
 /* ------ LDISC part ------ */
@@ -456,18 +455,15 @@ static int hci_uart_register_dev(struct hci_uart *hu)
 	hu->hdev = hdev;
 
 	hdev->bus = HCI_UART;
-	hdev->driver_data = hu;
+	hci_set_drvdata(hdev, hu);
 
 	hdev->open  = hci_uart_open;
 	hdev->close = hci_uart_close;
 	hdev->flush = hci_uart_flush;
 	hdev->send  = hci_uart_send_frame;
-	hdev->destruct = hci_uart_destruct;
-
-	hdev->owner = THIS_MODULE;
 
 	if (!reset)
-		set_bit(HCI_QUIRK_NO_RESET, &hdev->quirks);
+		set_bit(HCI_QUIRK_RESET_ON_CLOSE, &hdev->quirks);
 
 	if (test_bit(HCI_UART_RAW_DEVICE, &hu->hdev_flags))
 		set_bit(HCI_QUIRK_RAW_DEVICE, &hdev->quirks);
@@ -655,3 +651,4 @@ MODULE_DESCRIPTION("CG2900 Staging Bluetooth HCI UART driver ver " VERSION);
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_LDISC(N_CG2900_HCI);
+
