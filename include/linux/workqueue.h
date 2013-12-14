@@ -304,23 +304,29 @@ extern struct workqueue_struct *
 __alloc_workqueue_key(const char *name, unsigned int flags, int max_active,
 		      struct lock_class_key *key, const char *lock_name);
 
+struct workqueue_struct *
+backport_alloc_workqueue(const char *fmt, unsigned int flags,
+			 int max_active, struct lock_class_key *key,
+			 const char *lock_name, ...);
+
 #ifdef CONFIG_LOCKDEP
-#define alloc_workqueue(name, flags, max_active)		\
-({								\
-	static struct lock_class_key __key;			\
-	const char *__lock_name;				\
-								\
-	if (__builtin_constant_p(name))				\
-		__lock_name = (name);				\
-	else							\
-		__lock_name = #name;				\
-								\
-	__alloc_workqueue_key((name), (flags), (max_active),	\
-			      &__key, __lock_name);		\
+#define alloc_workqueue(fmt, flags, max_active, args...)		\
+({									\
+	static struct lock_class_key __key;				\
+	const char *__lock_name;					\
+									\
+	if (__builtin_constant_p(fmt))					\
+		__lock_name = (fmt);					\
+	else								\
+		__lock_name = #fmt;					\
+									\
+	backport_alloc_workqueue((fmt), (flags), (max_active),		\
+				 &__key, __lock_name, ##args);		\
 })
 #else
-#define alloc_workqueue(name, flags, max_active)		\
-	__alloc_workqueue_key((name), (flags), (max_active), NULL, NULL)
+#define alloc_workqueue(fmt, flags, max_active, args...)		\
+	backport_alloc_workqueue((fmt), (flags), (max_active),		\
+				 NULL, NULL, ##args)
 #endif
 
 /**
