@@ -191,7 +191,7 @@ static void hci_read_cb(struct cg2900_user_data *user, struct sk_buff *skb)
 		BT_DBG("Data receive %d bytes", skb->len);
 
 		/* Provide BlueZ with received frame*/
-		err = hci_recv_frame(hdev, skb);
+		err = hci_recv_frame(skb);
 		/* If err, skb have been freed in hci_recv_frame() */
 		if (err)
 			BT_ERR(NAME "Failed in supplying packet to Bluetooth"
