@@ -51,7 +51,7 @@ _mali_osk_errcode_t _mali_osk_pm_dev_idle(void)
 	if (MALI_TRUE == have_runtime_reference)
 	{
 		int err;
-		//	err = pm_runtime_put_sync(&(mali_gpu_device.dev));
+		err = pm_runtime_put_sync(&(mali_gpu_device.dev));
 		if (0 > err)
 		{
 			MALI_PRINT_ERROR(("OSK PM: pm_runtime_put_sync() returned error code %d\n", err));	
@@ -70,7 +70,7 @@ _mali_osk_errcode_t _mali_osk_pm_dev_activate(void)
 	if (MALI_TRUE != have_runtime_reference)
 	{
 		int err;
-		//err = pm_runtime_get_sync(&(mali_gpu_device.dev));
+		err = pm_runtime_get_sync(&(mali_gpu_device.dev));
 		if (0 > err)
 		{
 			MALI_PRINT_ERROR(("OSK PM: pm_runtime_get_sync() returned error code %d\n", err));	
