@@ -234,10 +234,10 @@ struct cfg80211_beacon_registration {
 };
 
 /* free object */
-extern void cfg80211_dev_free(struct cfg80211_registered_device *rdev);
+void cfg80211_dev_free(struct cfg80211_registered_device *rdev);
 
-extern int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
-			       char *newname);
+int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
+			char *newname);
 
 void ieee80211_set_bitrate_flags(struct wiphy *wiphy);
 
@@ -317,9 +317,8 @@ void cfg80211_mlme_unregister_socket(struct wireless_dev *wdev, u32 nlpid);
 void cfg80211_mlme_purge_registrations(struct wireless_dev *wdev);
 int cfg80211_mlme_mgmt_tx(struct cfg80211_registered_device *rdev,
 			  struct wireless_dev *wdev,
-			  struct ieee80211_channel *chan, bool offchan,
-			  unsigned int wait, const u8 *buf, size_t len,
-			  bool no_cck, bool dont_wait_for_ack, u64 *cookie);
+			  struct cfg80211_mgmt_tx_params *params,
+			  u64 *cookie);
 void cfg80211_oper_and_ht_capa(struct ieee80211_ht_cap *ht_capa,
 			       const struct ieee80211_ht_cap *ht_capa_mask);
 void cfg80211_oper_and_vht_capa(struct ieee80211_vht_cap *vht_capa,
@@ -383,13 +382,17 @@ int cfg80211_can_use_iftype_chan(struct cfg80211_registered_device *rdev,
 				 u8 radar_detect);
 
 /**
- * cfg80211_chandef_dfs_required - checks if radar detection is required
+ * cfg80211_chandef_dfs_usable - checks if chandef is DFS usable
  * @wiphy: the wiphy to validate against
  * @chandef: the channel definition to check
- * Return: 1 if radar detection is required, 0 if it is not, < 0 on error
+ *
+ * Checks if chandef is usable and we can/need start CAC on such channel.
+ *
+ * Return: Return true if all channels available and at least
+ *	   one channel require CAC (NL80211_DFS_USABLE)
  */
-int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
-				  const struct cfg80211_chan_def *c);
+bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
+				 const struct cfg80211_chan_def *chandef);
 
 void cfg80211_set_dfs_state(struct wiphy *wiphy,
 			    const struct cfg80211_chan_def *chandef,
@@ -472,6 +475,12 @@ void cfg80211_stop_p2p_device(struct cfg80211_registered_device *rdev,
  * not used that way.
  */
 #define CFG80211_DEV_WARN_ON(cond)	({bool __r = (cond); __r; })
+#endif
+
+#ifdef CONFIG_CFG80211_ANDROID_P2P_HACK
+void cfg80211_android_create_p2p_device(struct wireless_dev *wdev,
+					const char *name);
+void cfg80211_android_destroy_p2p_device(struct wireless_dev *wdev);
 #endif
 
 #endif /* __NET_WIRELESS_CORE_H */

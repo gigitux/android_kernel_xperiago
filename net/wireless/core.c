@@ -34,6 +34,7 @@
 MODULE_AUTHOR("Johannes Berg");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("wireless configuration support");
+MODULE_ALIAS_GENL_FAMILY(NL80211_GENL_NAME);
 
 /* RCU-protected (and RTNL for writers) */
 LIST_HEAD(cfg80211_rdev_list);
@@ -144,6 +145,12 @@ int cfg80211_switch_netns(struct cfg80211_registered_device *rdev,
 		return -EOPNOTSUPP;
 
 	list_for_each_entry(wdev, &rdev->wdev_list, list) {
+#ifdef CONFIG_CFG80211_ANDROID_P2P_HACK
+		if (wdev->iftype == NL80211_IFTYPE_P2P_DEVICE) {
+			err = -EBUSY;
+			break;
+		}
+#endif
 		if (!wdev->netdev)
 			continue;
 		wdev->netdev->features &= ~NETIF_F_NETNS_LOCAL;
@@ -363,8 +370,6 @@ struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv)
 	rdev->wiphy.rts_threshold = (u32) -1;
 	rdev->wiphy.coverage_class = 0;
 
-	rdev->wiphy.features = NL80211_FEATURE_SCAN_FLUSH;
-
 	return &rdev->wiphy;
 }
 EXPORT_SYMBOL(wiphy_new);
@@ -456,6 +461,15 @@ int wiphy_register(struct wiphy *wiphy)
 	bool have_band = false;
 	int i;
 	u16 ifmodes = wiphy->interface_modes;
+
+	/* support for 5/10 MHz is broken due to nl80211 API mess - disable */
+	wiphy->flags &= ~WIPHY_FLAG_SUPPORTS_5_10_MHZ;
+
+	/*
+	 * There are major locking problems in nl80211/mac80211 for CSA,
+	 * disable for all drivers until this has been reworked.
+	 */
+	wiphy->flags &= ~WIPHY_FLAG_HAS_CHANNEL_SWITCH;
 
 #ifdef CONFIG_PM
 	if (WARN_ON(wiphy->wowlan &&
@@ -572,6 +586,8 @@ int wiphy_register(struct wiphy *wiphy)
 	/* check and set up bitrates */
 	ieee80211_set_bitrate_flags(wiphy);
 
+	rdev->wiphy.features |= NL80211_FEATURE_SCAN_FLUSH;
+
 	rtnl_lock();
 	res = device_add(&rdev->wiphy.dev);
 	if (res) {
@@ -592,7 +608,7 @@ int wiphy_register(struct wiphy *wiphy)
 	if (IS_ERR(rdev->wiphy.debugfsdir))
 		rdev->wiphy.debugfsdir = NULL;
 
-	if (wiphy->flags & WIPHY_FLAG_CUSTOM_REGULATORY) {
+	if (wiphy->regulatory_flags & REGULATORY_CUSTOM_REG) {
 		struct regulatory_request request;
 
 		request.wiphy_idx = get_wiphy_idx(wiphy);
@@ -735,6 +751,9 @@ void cfg80211_unregister_wdev(struct wireless_dev *wdev)
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_P2P_DEVICE:
 		cfg80211_stop_p2p_device(rdev, wdev);
+#ifdef CONFIG_CFG80211_ANDROID_P2P_HACK
+		cfg80211_android_destroy_p2p_device(wdev);
+#endif
 		break;
 	default:
 		WARN_ON_ONCE(1);
@@ -795,14 +814,6 @@ void cfg80211_leave(struct cfg80211_registered_device *rdev,
 	wdev->beacon_interval = 0;
 }
 
-void netdev_set_default_ethtool_ops(struct net_device *dev,
-				    const struct ethtool_ops *ops)
-{
-	if (!dev->ethtool_ops)
-		dev->ethtool_ops = ops;
-}
-EXPORT_SYMBOL_GPL(netdev_set_default_ethtool_ops);
-
 static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 					 unsigned long state, void *ptr)
 {
@@ -817,6 +828,11 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 	rdev = wiphy_to_dev(wdev->wiphy);
 
 	WARN_ON(wdev->iftype == NL80211_IFTYPE_UNSPECIFIED);
+
+#ifdef CONFIG_CFG80211_ANDROID_P2P_HACK
+	if (wdev->iftype == NL80211_IFTYPE_P2P_DEVICE)
+		return NOTIFY_DONE;
+#endif
 
 	switch (state) {
 	case NETDEV_POST_INIT:

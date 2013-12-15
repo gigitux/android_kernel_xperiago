@@ -10,8 +10,8 @@
  * See Documentation/driver-model/ for more information.
  */
 
-#ifndef _DEVICE_H_
-#define _DEVICE_H_
+#ifndef __LINUX_DEVICE_H_
+#define __LINUX_DEVICE_H_
 
 #include <linux/ioport.h>
 #include <linux/kobject.h>
@@ -920,4 +920,4 @@ static void init_##_name##_attrs(void)				\
 				      attr);				\
 }
 
-#endif /* _DEVICE_H_ */
+#endif /* __LINUX_DEVICE_H_ */
