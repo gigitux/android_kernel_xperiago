@@ -1580,6 +1580,14 @@ static bool wsm_handle_tx_data(struct cw1200_common *priv,
 	return handled;
 }
 
+unsigned int get_random_int(void)
+{
+	unsigned int r;
+	get_random_bytes(&r, sizeof(r));
+
+	return r;
+}
+
 static int cw1200_get_prio_queue(struct cw1200_common *priv,
 				 u32 link_id_map, int *total)
 {
