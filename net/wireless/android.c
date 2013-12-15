@@ -52,9 +52,7 @@ static int cfg80211_android_p2pdev_open(struct net_device *dev)
 	if (wdev->p2p_started)
 		return 0;
 
-	mutex_lock(&rdev->devlist_mtx);
 	err = cfg80211_can_add_interface(rdev, wdev->iftype);
-	mutex_unlock(&rdev->devlist_mtx);
 	if (err)
 		return err;
 
@@ -63,9 +61,7 @@ static int cfg80211_android_p2pdev_open(struct net_device *dev)
 		return err;
 
 	wdev->p2p_started = true;
-	mutex_lock(&rdev->devlist_mtx);
 	rdev->opencount++;
-	mutex_unlock(&rdev->devlist_mtx);
 
 	return 0;
 }
@@ -78,11 +74,7 @@ static int cfg80211_android_p2pdev_stop(struct net_device *dev)
 	if (!wdev->p2p_started)
 		return 0;
 
-	mutex_lock(&rdev->devlist_mtx);
-	mutex_lock(&rdev->sched_scan_mtx);
 	cfg80211_stop_p2p_device(rdev, wdev);
-	mutex_unlock(&rdev->sched_scan_mtx);
-	mutex_unlock(&rdev->devlist_mtx);
 
 	return 0;
 }
