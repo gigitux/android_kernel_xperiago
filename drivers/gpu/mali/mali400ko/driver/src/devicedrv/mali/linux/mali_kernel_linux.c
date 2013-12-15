@@ -156,7 +156,7 @@ platform_init_failed:
 	terminate_kernel_device();
 initialize_kernel_device_failed:
 	_mali_dev_platform_unregister();
-platform_register_failed:
+//platform_register_failed:
 	return ret;
 }
 
