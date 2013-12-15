@@ -266,8 +266,16 @@ struct sta_info *sta_info_get_by_idx(struct ieee80211_sub_if_data *sdata,
  */
 void sta_info_free(struct ieee80211_local *local, struct sta_info *sta)
 {
+	int i;
+
 	if (sta->rate_ctrl)
 		rate_control_free_sta(sta);
+
+	if (sta->tx_lat) {
+		for (i = 0; i < IEEE80211_NUM_TIDS; i++)
+			kfree(sta->tx_lat[i].bins);
+		kfree(sta->tx_lat);
+	}
 
 	sta_dbg(sta->sdata, "Destroyed STA %pM\n", sta->sta.addr);
 
@@ -333,6 +341,7 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
 	struct timespec uptime;
+	struct ieee80211_tx_latency_bin_ranges *tx_latency;
 	int i;
 
 	sta = kzalloc(sizeof(*sta) + local->hw.sta_data_size, gfp);
@@ -385,6 +394,55 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 		sta->last_seq_ctrl[i] = cpu_to_le16(USHRT_MAX);
 
 	sta->sta.smps_mode = IEEE80211_SMPS_OFF;
+	if (sdata->vif.type == NL80211_IFTYPE_AP ||
+	    sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+		struct ieee80211_supported_band *sband =
+			local->hw.wiphy->bands[ieee80211_get_sdata_band(sdata)];
+		u8 smps = (sband->ht_cap.cap & IEEE80211_HT_CAP_SM_PS) >>
+				IEEE80211_HT_CAP_SM_PS_SHIFT;
+		/*
+		 * Assume that hostapd advertises our caps in the beacon and
+		 * this is the known_smps_mode for a station that just assciated
+		 */
+		switch (smps) {
+		case WLAN_HT_SMPS_CONTROL_DISABLED:
+			sta->known_smps_mode = IEEE80211_SMPS_OFF;
+			break;
+		case WLAN_HT_SMPS_CONTROL_STATIC:
+			sta->known_smps_mode = IEEE80211_SMPS_STATIC;
+			break;
+		case WLAN_HT_SMPS_CONTROL_DYNAMIC:
+			sta->known_smps_mode = IEEE80211_SMPS_DYNAMIC;
+			break;
+		default:
+			WARN_ON(1);
+		}
+	}
+
+	rcu_read_lock();
+
+	tx_latency = rcu_dereference(local->tx_latency);
+	/* init stations Tx latency statistics && TID bins */
+	if (tx_latency)
+		sta->tx_lat = kzalloc(IEEE80211_NUM_TIDS *
+				      sizeof(struct ieee80211_tx_latency_stat),
+				      GFP_ATOMIC);
+
+	/*
+	 * if Tx latency and bins are enabled and the previous allocation
+	 * succeeded
+	 */
+	if (tx_latency && tx_latency->n_ranges && sta->tx_lat)
+		for (i = 0; i < IEEE80211_NUM_TIDS; i++) {
+			/* size of bins is size of the ranges +1 */
+			sta->tx_lat[i].bin_count =
+				tx_latency->n_ranges + 1;
+			sta->tx_lat[i].bins  = kcalloc(sta->tx_lat[i].bin_count,
+						       sizeof(u32),
+						       GFP_ATOMIC);
+		}
+
+	rcu_read_unlock();
 
 	sta_dbg(sdata, "Allocated STA %pM\n", sta->sta.addr);
 
@@ -483,6 +541,7 @@ static int sta_info_insert_finish(struct sta_info *sta) __acquires(RCU)
 
 	set_sta_flag(sta, WLAN_STA_INSERTED);
 
+	ieee80211_recalc_min_chandef(sdata);
 	ieee80211_sta_debugfs_add(sta);
 	rate_control_add_sta_debugfs(sta);
 
@@ -606,8 +665,8 @@ void sta_info_recalc_tim(struct sta_info *sta)
 #ifdef CONFIG_MAC80211_MESH
 	} else if (ieee80211_vif_is_mesh(&sta->sdata->vif)) {
 		ps = &sta->sdata->u.mesh.ps;
-		/* TIM map only for PLID <= IEEE80211_MAX_AID */
-		id = le16_to_cpu(sta->plid) % IEEE80211_MAX_AID;
+		/* TIM map only for 1 <= PLID <= IEEE80211_MAX_AID */
+		id = sta->plid % (IEEE80211_MAX_AID + 1);
 #endif
 	} else {
 		return;
@@ -845,6 +904,7 @@ int __must_check __sta_info_destroy(struct sta_info *sta)
 
 	rate_control_remove_sta_debugfs(sta);
 	ieee80211_sta_debugfs_remove(sta);
+	ieee80211_recalc_min_chandef(sdata);
 
 	call_rcu(&sta->rcu_head, free_sta_rcu);
 
@@ -1068,6 +1128,19 @@ void ieee80211_sta_ps_deliver_wakeup(struct sta_info *sta)
 	}
 
 	ieee80211_add_pending_skbs_fn(local, &pending, clear_sta_ps_flags, sta);
+
+	/* This station just woke up and isn't aware of our SMPS state */
+	if (!ieee80211_smps_is_restrictive(sta->known_smps_mode,
+					   sdata->smps_mode) &&
+	    sta->known_smps_mode != sdata->bss->req_smps &&
+	    sta_info_tx_streams(sta) != 1) {
+		ht_dbg(sdata,
+		       "%pM just woke up and MIMO capable - update SMPS\n",
+		       sta->sta.addr);
+		ieee80211_send_smps_action(sdata, sdata->bss->req_smps,
+					   sta->sta.addr,
+					   sdata->vif.bss_conf.bssid);
+	}
 
 	local->total_ps_buffered -= buffered;
 
@@ -1519,4 +1592,39 @@ int sta_info_move_state(struct sta_info *sta,
 	sta->sta_state = new_state;
 
 	return 0;
+}
+
+u8 sta_info_tx_streams(struct sta_info *sta)
+{
+	struct ieee80211_sta_ht_cap *ht_cap = &sta->sta.ht_cap;
+	u8 rx_streams;
+
+	if (!sta->sta.ht_cap.ht_supported)
+		return 1;
+
+	if (sta->sta.vht_cap.vht_supported) {
+		int i;
+		u16 tx_mcs_map =
+			le16_to_cpu(sta->sta.vht_cap.vht_mcs.tx_mcs_map);
+
+		for (i = 7; i >= 0; i--)
+			if ((tx_mcs_map & (0x3 << (i * 2))) !=
+			    IEEE80211_VHT_MCS_NOT_SUPPORTED)
+				return i + 1;
+	}
+
+	if (ht_cap->mcs.rx_mask[3])
+		rx_streams = 4;
+	else if (ht_cap->mcs.rx_mask[2])
+		rx_streams = 3;
+	else if (ht_cap->mcs.rx_mask[1])
+		rx_streams = 2;
+	else
+		rx_streams = 1;
+
+	if (!(ht_cap->mcs.tx_params & IEEE80211_HT_MCS_TX_RX_DIFF))
+		return rx_streams;
+
+	return ((ht_cap->mcs.tx_params & IEEE80211_HT_MCS_TX_MAX_STREAMS_MASK)
+			>> IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT) + 1;
 }

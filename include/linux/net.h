@@ -23,6 +23,12 @@
 
 #define NPROTO		AF_MAX
 
+#ifndef MODULE_ALIAS_NET_PF_PROTO_NAME
+#define MODULE_ALIAS_NET_PF_PROTO_NAME(pf, proto, name) \
+	MODULE_ALIAS("net-pf-" __stringify(pf) "-proto-" __stringify(proto) \
+		     name)
+#endif
+
 #define SYS_SOCKET	1		/* sys_socket(2)		*/
 #define SYS_BIND	2		/* sys_bind(2)			*/
 #define SYS_CONNECT	3		/* sys_connect(2)		*/

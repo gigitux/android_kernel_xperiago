@@ -5,6 +5,7 @@
 #ifndef _LINUX_WORKQUEUE_H
 #define _LINUX_WORKQUEUE_H
 
+#include <linux/version.h>
 #include <linux/timer.h>
 #include <linux/linkage.h>
 #include <linux/bitops.h>
@@ -267,6 +268,10 @@ enum {
 #define WQ_UNBOUND_MAX_ACTIVE	\
 	max_t(int, WQ_MAX_ACTIVE, num_possible_cpus() * WQ_MAX_UNBOUND_PER_CPU)
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
+#define __WQ_ORDERED	0
+#endif
+
 /*
  * System-wide workqueues which are always present.
  *
@@ -329,23 +334,8 @@ backport_alloc_workqueue(const char *fmt, unsigned int flags,
 				 NULL, NULL, ##args)
 #endif
 
-/**
- * alloc_ordered_workqueue - allocate an ordered workqueue
- * @name: name of the workqueue
- * @flags: WQ_* flags (only WQ_FREEZABLE and WQ_MEM_RECLAIM are meaningful)
- *
- * Allocate an ordered workqueue.  An ordered workqueue executes at
- * most one work item at any given time in the queued order.  They are
- * implemented as unbound workqueues with @max_active of one.
- *
- * RETURNS:
- * Pointer to the allocated workqueue on success, %NULL on failure.
- */
-static inline struct workqueue_struct *
-alloc_ordered_workqueue(const char *name, unsigned int flags)
-{
-	return alloc_workqueue(name, WQ_UNBOUND | flags, 1);
-}
+#define alloc_ordered_workqueue(fmt, flags, args...) \
+	alloc_workqueue(fmt, WQ_UNBOUND | __WQ_ORDERED | (flags), 1, ##args)
 
 #define create_workqueue(name)					\
 	alloc_workqueue((name), WQ_MEM_RECLAIM, 1)

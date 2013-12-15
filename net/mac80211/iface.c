@@ -401,6 +401,8 @@ int ieee80211_add_virtual_monitor(struct ieee80211_local *local)
 	snprintf(sdata->name, IFNAMSIZ, "%s-monitor",
 		 wiphy_name(local->hw.wiphy));
 
+	sdata->encrypt_headroom = IEEE80211_ENCRYPT_HEADROOM;
+
 	ieee80211_set_default_queues(sdata);
 
 	ret = drv_add_interface(local, sdata);
@@ -749,6 +751,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 	u32 hw_reconf_flags = 0;
 	int i, flushed;
 	struct ps_data *ps;
+	struct cfg80211_chan_def chandef;
 
 	clear_bit(SDATA_STATE_RUNNING, &sdata->state);
 
@@ -765,6 +768,10 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION)
 		ieee80211_mgd_stop(sdata);
+
+	if (sdata->vif.type == NL80211_IFTYPE_ADHOC)
+		ieee80211_ibss_stop(sdata);
+
 
 	/*
 	 * Remove all stations associated with this interface.
@@ -803,8 +810,13 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 	if (sdata->dev) {
 		netif_addr_lock_bh(sdata->dev);
 		spin_lock_bh(&local->filter_lock);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 		__hw_addr_unsync(&local->mc_list, &sdata->dev->mc,
 				 sdata->dev->addr_len);
+#else
+		__dev_addr_unsync(&local->mc_list, &local->mc_count,
+				  &sdata->dev->mc_list, &sdata->dev->mc_count);
+#endif
 		spin_unlock_bh(&local->filter_lock);
 		netif_addr_unlock_bh(sdata->dev);
 	}
@@ -819,11 +831,13 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 	cancel_delayed_work_sync(&sdata->dfs_cac_timer_work);
 
 	if (sdata->wdev.cac_started) {
+		chandef = sdata->vif.bss_conf.chandef;
 		WARN_ON(local->suspended);
 		mutex_lock(&local->iflist_mtx);
 		ieee80211_vif_release_channel(sdata);
 		mutex_unlock(&local->iflist_mtx);
-		cfg80211_cac_event(sdata->dev, NL80211_RADAR_CAC_ABORTED,
+		cfg80211_cac_event(sdata->dev, &chandef,
+				   NL80211_RADAR_CAC_ABORTED,
 				   GFP_KERNEL);
 	}
 
@@ -1018,10 +1032,20 @@ static void ieee80211_set_multicast_list(struct net_device *dev)
 	if (sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 	    sdata->vif.type != NL80211_IFTYPE_AP_VLAN &&
 	    sdata->vif.type != NL80211_IFTYPE_AP)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 		drv_set_multicast_list(local, sdata, &dev->mc);
+#else
+		drv_set_multicast_list(local, sdata, dev->mc_count,
+				       dev->mc_list);
+#endif
 
 	spin_lock_bh(&local->filter_lock);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	__hw_addr_sync(&local->mc_list, &dev->mc, dev->addr_len);
+#else
+	__dev_addr_sync(&local->mc_list, &local->mc_count,
+			&dev->mc_list, &dev->mc_count);
+#endif
 	spin_unlock_bh(&local->filter_lock);
 	ieee80211_queue_work(&local->hw, &local->reconfig_filter);
 }
@@ -1032,7 +1056,6 @@ static void ieee80211_set_multicast_list(struct net_device *dev)
  */
 static void ieee80211_teardown_sdata(struct ieee80211_sub_if_data *sdata)
 {
-	int flushed;
 	int i;
 
 	/* free extra data */
@@ -1046,9 +1069,6 @@ static void ieee80211_teardown_sdata(struct ieee80211_sub_if_data *sdata)
 
 	if (ieee80211_vif_is_mesh(&sdata->vif))
 		mesh_rmc_free(sdata);
-
-	flushed = sta_info_flush(sdata);
-	WARN_ON(flushed);
 }
 
 static void ieee80211_uninit(struct net_device *dev)
@@ -1266,6 +1286,7 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 
 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);
 	sdata->control_port_no_encrypt = false;
+	sdata->encrypt_headroom = IEEE80211_ENCRYPT_HEADROOM;
 
 	sdata->noack_map = 0;
 
@@ -1289,7 +1310,10 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	case NL80211_IFTYPE_AP:
 		skb_queue_head_init(&sdata->u.ap.ps.bc_buf);
 		INIT_LIST_HEAD(&sdata->u.ap.vlans);
+		INIT_WORK(&sdata->u.ap.request_smps_work,
+			  ieee80211_request_smps_ap_work);
 		sdata->vif.bss_conf.bssid = sdata->vif.addr;
+		sdata->u.ap.req_smps = IEEE80211_SMPS_OFF;
 		break;
 	case NL80211_IFTYPE_P2P_CLIENT:
 		type = NL80211_IFTYPE_STATION;
@@ -1318,7 +1342,6 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 		sdata->vif.bss_conf.bssid = NULL;
 		break;
 	case NL80211_IFTYPE_AP_VLAN:
-		break;
 	case NL80211_IFTYPE_P2P_DEVICE:
 		sdata->vif.bss_conf.bssid = sdata->vif.addr;
 		break;
@@ -1615,6 +1638,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 			return -ENOMEM;
 		dev_net_set(ndev, wiphy_net(local->hw.wiphy));
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
 		ndev->needed_headroom = local->tx_headroom +
 					4*6 /* four MAC addresses */
 					+ 2 + 2 + 2 + 2 /* ctl, dur, seq, qos */
@@ -1623,6 +1647,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 					- ETH_HLEN /* ethernet hard_header_len */
 					+ IEEE80211_ENCRYPT_HEADROOM;
 		ndev->needed_tailroom = IEEE80211_ENCRYPT_TAILROOM;
+#endif
 
 		ret = dev_alloc_name(ndev, ndev->name);
 		if (ret < 0) {
@@ -1678,6 +1703,8 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 	sdata->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
 	sdata->user_power_level = local->user_power_level;
+
+	sdata->encrypt_headroom = IEEE80211_ENCRYPT_HEADROOM;
 
 	/* setup type-dependent data */
 	ieee80211_setup_sdata(sdata, type);
@@ -1738,6 +1765,7 @@ void ieee80211_sdata_stop(struct ieee80211_sub_if_data *sdata)
  * Remove all interfaces, may only be called at hardware unregistration
  * time because it doesn't do RCU-safe list removals.
  */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33))
 void ieee80211_remove_interfaces(struct ieee80211_local *local)
 {
 	struct ieee80211_sub_if_data *sdata, *tmp;
@@ -1774,6 +1802,22 @@ void ieee80211_remove_interfaces(struct ieee80211_local *local)
 		kfree(sdata);
 	}
 }
+#else
+void ieee80211_remove_interfaces(struct ieee80211_local *local)
+{
+	struct ieee80211_sub_if_data *sdata, *tmp;
+
+	ASSERT_RTNL();
+
+	list_for_each_entry_safe(sdata, tmp, &local->interfaces, list) {
+		mutex_lock(&local->iflist_mtx);
+		list_del(&sdata->list);
+		mutex_unlock(&local->iflist_mtx);
+
+		unregister_netdevice(sdata->dev);
+	}
+}
+#endif
 
 static int netdev_notify(struct notifier_block *nb,
 			 unsigned long state, void *ptr)

@@ -13,6 +13,7 @@
 #ifndef MAC80211_H
 #define MAC80211_H
 
+#include <linux/version.h>
 #include <linux/bug.h>
 #include <linux/kernel.h>
 #include <linux/if_ether.h>
@@ -156,12 +157,14 @@ struct ieee80211_low_level_stats {
  * @IEEE80211_CHANCTX_CHANGE_RADAR: radar detection flag changed
  * @IEEE80211_CHANCTX_CHANGE_CHANNEL: switched to another operating channel,
  *	this is used only with channel switching with CSA
+ * @IEEE80211_CHANCTX_CHANGE_MIN_WIDTH: The min required channel width changed
  */
 enum ieee80211_chanctx_change {
 	IEEE80211_CHANCTX_CHANGE_WIDTH		= BIT(0),
 	IEEE80211_CHANCTX_CHANGE_RX_CHAINS	= BIT(1),
 	IEEE80211_CHANCTX_CHANGE_RADAR		= BIT(2),
 	IEEE80211_CHANCTX_CHANGE_CHANNEL	= BIT(3),
+	IEEE80211_CHANCTX_CHANGE_MIN_WIDTH	= BIT(4),
 };
 
 /**
@@ -171,6 +174,7 @@ enum ieee80211_chanctx_change {
  * that contains it is visible in mac80211 only.
  *
  * @def: the channel definition
+ * @min_def: the minimum channel definition currently required.
  * @rx_chains_static: The number of RX chains that must always be
  *	active on the channel to receive MIMO transmissions
  * @rx_chains_dynamic: The number of RX chains that must be enabled
@@ -182,6 +186,7 @@ enum ieee80211_chanctx_change {
  */
 struct ieee80211_chanctx_conf {
 	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def min_def;
 
 	u8 rx_chains_static, rx_chains_dynamic;
 
@@ -831,6 +836,15 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  * @RX_FLAG_STBC_MASK: STBC 2 bit bitmask. 1 - Nss=1, 2 - Nss=2, 3 - Nss=3
  * @RX_FLAG_10MHZ: 10 MHz (half channel) was used
  * @RX_FLAG_5MHZ: 5 MHz (quarter channel) was used
+ * @RX_FLAG_AMSDU_MORE: Some drivers may prefer to report separate A-MSDU
+ *	subframes instead of a one huge frame for performance reasons.
+ *	All, but the last MSDU from an A-MSDU should have this flag set. E.g.
+ *	if an A-MSDU has 3 frames, the first 2 must have the flag set, while
+ *	the 3rd (last) one must not have this flag set. The flag is used to
+ *	deal with retransmission/duplication recovery properly since A-MSDU
+ *	subframes share the same sequence number. Reported subframes can be
+ *	either regular MSDU or singly A-MSDUs. Subframes must not be
+ *	interleaved with other frames.
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR		= BIT(0),
@@ -861,6 +875,7 @@ enum mac80211_rx_flags {
 	RX_FLAG_STBC_MASK		= BIT(26) | BIT(27),
 	RX_FLAG_10MHZ			= BIT(28),
 	RX_FLAG_5MHZ			= BIT(29),
+	RX_FLAG_AMSDU_MORE		= BIT(30),
 };
 
 #define RX_FLAG_STBC_SHIFT		26
@@ -1221,6 +1236,36 @@ struct ieee80211_key_conf {
 };
 
 /**
+ * struct ieee80211_cipher_scheme - cipher scheme
+ *
+ * This structure contains a cipher scheme information defining
+ * the secure packet crypto handling.
+ *
+ * @cipher: a cipher suite selector
+ * @iftype: a cipher iftype bit mask indicating an allowed cipher usage
+ * @hdr_len: a length of a security header used the cipher
+ * @pn_len: a length of a packet number in the security header
+ * @pn_off: an offset of pn from the beginning of the security header
+ * @key_idx_off: an offset of key index byte in the security header
+ * @key_idx_mask: a bit mask of key_idx bits
+ * @key_idx_shift: a bit shift needed to get key_idx
+ *     key_idx value calculation:
+ *      (sec_header_base[key_idx_off] & key_idx_mask) >> key_idx_shift
+ * @mic_len: a mic length in bytes
+ */
+struct ieee80211_cipher_scheme {
+	u32 cipher;
+	u16 iftype;
+	u8 hdr_len;
+	u8 pn_len;
+	u8 pn_off;
+	u8 key_idx_off;
+	u8 key_idx_mask;
+	u8 key_idx_shift;
+	u8 mic_len;
+};
+
+/**
  * enum set_key_cmd - key command
  *
  * Used with the set_key() callback in &struct ieee80211_ops, this
@@ -1494,6 +1539,15 @@ struct ieee80211_tx_control {
  *
  * @IEEE80211_HW_TIMING_BEACON_ONLY: Use sync timing from beacon frames
  *	only, to allow getting TBTT of a DTIM beacon.
+ *
+ * @IEEE80211_HW_SUPPORTS_HT_CCK_RATES: Hardware supports mixing HT/CCK rates
+ *	and can cope with CCK rates in an aggregation session (e.g. by not
+ *	using aggregation for such frames.)
+ *
+ * @IEEE80211_HW_CHANCTX_STA_CSA: Support 802.11h based channel-switch (CSA)
+ *	for a single active channel while using channel contexts. When support
+ *	is not enabled the default action is to disconnect when getting the
+ *	CSA frame.
  */
 enum ieee80211_hw_flags {
 	IEEE80211_HW_HAS_RATE_CONTROL			= 1<<0,
@@ -1524,6 +1578,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_P2P_DEV_ADDR_FOR_INTF		= 1<<25,
 	IEEE80211_HW_TIMING_BEACON_ONLY			= 1<<26,
 	IEEE80211_HW_SUPPORTS_HT_CCK_RATES		= 1<<27,
+	IEEE80211_HW_CHANCTX_STA_CSA			= 1<<28,
 };
 
 /**
@@ -1618,6 +1673,10 @@ enum ieee80211_hw_flags {
  * @uapsd_max_sp_len: maximum number of total buffered frames the WMM AP may
  *	deliver to a WMM STA during any Service Period triggered by the WMM STA.
  *	Use IEEE80211_WMM_IE_STA_QOSINFO_SP_* for correct values.
+ *
+ * @n_cipher_schemes: a size of an array of cipher schemes definitions.
+ * @cipher_schemes: a pointer to an array of cipher scheme definitions
+ *	supported by HW.
  */
 struct ieee80211_hw {
 	struct ieee80211_conf conf;
@@ -1645,6 +1704,8 @@ struct ieee80211_hw {
 	netdev_features_t netdev_features;
 	u8 uapsd_queues;
 	u8 uapsd_max_sp_len;
+	u8 n_cipher_schemes;
+	const struct ieee80211_cipher_scheme *cipher_schemes;
 };
 
 /**
@@ -2668,6 +2729,10 @@ enum ieee80211_roc_type {
  *	zero using ieee80211_csa_is_complete() after the beacon has been
  *	transmitted and then call ieee80211_csa_finish().
  *
+ * @join_ibss: Join an IBSS (on an IBSS interface); this is called after all
+ *	information in bss_conf is set up and the beacon can be retrieved. A
+ *	channel context is bound before this is called.
+ * @leave_ibss: Leave the IBSS again.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -2697,14 +2762,24 @@ struct ieee80211_ops {
 	void (*stop_ap)(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
 
 	u64 (*prepare_multicast)(struct ieee80211_hw *hw,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 				 struct netdev_hw_addr_list *mc_list);
+#else
+				 int mc_count, struct dev_addr_list *mc_list);
+#endif
 	void (*configure_filter)(struct ieee80211_hw *hw,
 				 unsigned int changed_flags,
 				 unsigned int *total_flags,
 				 u64 multicast);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	void (*set_multicast_list)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif, bool allmulti,
 				   struct netdev_hw_addr_list *mc_list);
+#else
+	void (*set_multicast_list)(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif, bool allmulti,
+				   int mc_count, struct dev_addr_list *ha);
+#endif
 
 	int (*set_tim)(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
 		       bool set);
@@ -2859,6 +2934,9 @@ struct ieee80211_ops {
 	void (*channel_switch_beacon)(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct cfg80211_chan_def *chandef);
+
+	int (*join_ibss)(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
+	void (*leave_ibss)(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
 };
 
 /**
@@ -3922,6 +4000,25 @@ void ieee80211_iterate_active_interfaces_atomic(struct ieee80211_hw *hw,
 						void *data);
 
 /**
+ * ieee80211_iterate_active_interfaces_rtnl - iterate active interfaces
+ *
+ * This function iterates over the interfaces associated with a given
+ * hardware that are currently active and calls the callback for them.
+ * This version can only be used while holding the RTNL.
+ *
+ * @hw: the hardware struct of which the interfaces should be iterated over
+ * @iter_flags: iteration flags, see &enum ieee80211_interface_iteration_flags
+ * @iterator: the iterator function to call, cannot sleep
+ * @data: first argument of the iterator function
+ */
+void ieee80211_iterate_active_interfaces_rtnl(struct ieee80211_hw *hw,
+					      u32 iter_flags,
+					      void (*iterator)(void *data,
+						u8 *mac,
+						struct ieee80211_vif *vif),
+					      void *data);
+
+/**
  * ieee80211_queue_work - add work onto the mac80211 workqueue
  *
  * Drivers and mac80211 use this to add work onto the mac80211 workqueue.
@@ -4526,5 +4623,19 @@ int ieee80211_ave_rssi(struct ieee80211_vif *vif);
 void ieee80211_report_wowlan_wakeup(struct ieee80211_vif *vif,
 				    struct cfg80211_wowlan_wakeup *wakeup,
 				    gfp_t gfp);
+
+/**
+ * ieee80211_tx_prepare_skb - prepare an 802.11 skb for transmission
+ * @hw: pointer as obtained from ieee80211_alloc_hw()
+ * @vif: virtual interface
+ * @skb: frame to be sent from within the driver
+ * @band: the band to transmit on
+ * @sta: optional pointer to get the station to send the frame to
+ *
+ * Note: must be called under RCU lock
+ */
+bool ieee80211_tx_prepare_skb(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif, struct sk_buff *skb,
+			      int band, struct ieee80211_sta **sta);
 
 #endif /* MAC80211_H */
