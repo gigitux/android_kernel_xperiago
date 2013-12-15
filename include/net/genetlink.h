@@ -58,6 +58,12 @@ struct genl_family {
 	struct list_head	ops_list;	/* private */
 	struct list_head	family_list;	/* private */
 	struct list_head	mcast_groups;	/* private */
+	bool			parallel_ops;
+	struct			genl_multicast_group *mcgrps;
+	struct			genl_ops *ops;
+	unsigned int		n_mcgrps;
+	unsigned int		n_ops;
+	struct module		*module;
 };
 
 /**
@@ -213,6 +219,19 @@ static inline int genlmsg_multicast_netns(struct net *net, struct sk_buff *skb,
 	return nlmsg_multicast(net->genl_sock, skb, pid, group, flags);
 }
 
+static inline int backport_genlmsg_multicast_netns(struct genl_family *family,
+					  struct net *net, struct sk_buff *skb,
+					  u32 portid, unsigned int group,
+					  gfp_t flags)
+{
+	if (WARN_ON_ONCE(group >= family->n_mcgrps))
+		return -EINVAL;
+	group = family->mcgrps[group].id;
+	return nlmsg_multicast(
+		net->genl_sock,
+		skb, portid, group, flags);
+}
+
 /**
  * genlmsg_multicast - multicast a netlink message to the default netns
  * @skb: netlink message as socket buffer
@@ -226,6 +245,18 @@ static inline int genlmsg_multicast(struct sk_buff *skb, u32 pid,
 	return genlmsg_multicast_netns(&init_net, skb, pid, group, flags);
 }
 
+static inline int backport_genlmsg_multicast(struct genl_family *family,
+				    struct sk_buff *skb, u32 portid,
+				    unsigned int group, gfp_t flags)
+{
+	if (WARN_ON_ONCE(group >= family->n_mcgrps))
+		return -EINVAL;
+	group = family->mcgrps[group].id;
+	return nlmsg_multicast(
+		init_net.genl_sock,
+		skb, portid, group, flags);
+}
+
 /**
  * genlmsg_multicast_allns - multicast a netlink message to all net namespaces
  * @skb: netlink message as socket buffer
@@ -237,6 +268,17 @@ static inline int genlmsg_multicast(struct sk_buff *skb, u32 pid,
  */
 int genlmsg_multicast_allns(struct sk_buff *skb, u32 pid,
 			    unsigned int group, gfp_t flags);
+
+static inline int
+backport_genlmsg_multicast_allns(struct genl_family *family,
+				 struct sk_buff *skb, u32 portid,
+				 unsigned int group, gfp_t flags)
+{
+	if (WARN_ON_ONCE(group >= family->n_mcgrps))
+		return -EINVAL;
+	group = family->mcgrps[group].id;
+	return genlmsg_multicast_allns(skb, portid, group, flags);
+}
 
 /**
  * genlmsg_unicast - unicast a netlink message
@@ -313,5 +355,25 @@ static inline struct sk_buff *genlmsg_new(size_t payload, gfp_t flags)
 #endif
 
 #define genl_dump_check_consistent(cb, user_hdr, family)
+
+#define __genl_const
+
+static inline int
+_genl_register_family_with_ops_grps(struct genl_family *family,
+				    struct genl_ops *ops, size_t n_ops,
+				    struct genl_multicast_group *mcgrps,
+				    size_t n_mcgrps)
+{
+	family->ops = ops;
+	family->n_ops = n_ops;
+	family->mcgrps = mcgrps;
+	family->n_mcgrps = n_mcgrps;
+	return genl_register_family(family);
+}
+
+#define genl_register_family_with_ops_groups(family, ops, grps)		\
+	_genl_register_family_with_ops_grps((family),			\
+					    (ops), ARRAY_SIZE(ops),	\
+					    (grps), ARRAY_SIZE(grps))
 
 #endif	/* __NET_GENERIC_NETLINK_H */

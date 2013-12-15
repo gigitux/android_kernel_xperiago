@@ -25,6 +25,11 @@
 #include "reg.h"
 #include "rdev-ops.h"
 
+/* backward compatibility with backports */
+#define genlmsg_multicast_netns backport_genlmsg_multicast_netns
+#define genlmsg_multicast_allns backport_genlmsg_multicast_allns
+#define genlmsg_multicast_allns backport_genlmsg_multicast_allns
+
 static int nl80211_crypto_settings(struct cfg80211_registered_device *rdev,
 				   struct genl_info *info,
 				   struct cfg80211_crypto_settings *settings,
@@ -8463,7 +8468,9 @@ static int nl80211_parse_coalesce_rule(struct cfg80211_registered_device *rdev,
 	struct nlattr *tb[NUM_NL80211_ATTR_COALESCE_RULE], *pat;
 	int rem, pat_len, mask_len, pkt_offset, n_patterns = 0;
 	struct nlattr *pat_tb[NUM_NL80211_PKTPAT];
-
+#ifdef CONFIG_CFG80211_ANDROID_P2P_HACK
+	struct wireless_dev *wdev;
+#endif
 	err = nla_parse(tb, NL80211_ATTR_COALESCE_RULE_MAX, nla_data(rule),
 			nla_len(rule), nl80211_coalesce_policy);
 	if (err)
