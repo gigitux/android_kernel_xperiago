@@ -33,6 +33,8 @@
 
 extern struct platform_device mali_gpu_device;
 
+#define XPERIA_HAVE_NO_PM_RUNTIME 1
+
 #ifdef CONFIG_PM_RUNTIME
 static mali_bool have_runtime_reference = MALI_FALSE;
 #endif
@@ -47,10 +49,12 @@ void _mali_osk_pm_dev_enable(void)
 /* NB: Function is not thread safe */
 _mali_osk_errcode_t _mali_osk_pm_dev_idle(void)
 {
+#if XPERIA_HAVE_NO_PM_RUNTIME
+have_runtime_reference = MALI_FALSE;
+#else
 #ifdef CONFIG_PM_RUNTIME
 	if (MALI_TRUE == have_runtime_reference)
 	{
-#if 0
 		int err;
 		//	err = pm_runtime_put_sync(&(mali_gpu_device.dev));
 		if (0 > err)
@@ -58,9 +62,9 @@ _mali_osk_errcode_t _mali_osk_pm_dev_idle(void)
 			MALI_PRINT_ERROR(("OSK PM: pm_runtime_put_sync() returned error code %d\n", err));	
 			return _MALI_OSK_ERR_FAULT;
 		}
-#endif
 		have_runtime_reference = MALI_FALSE;
 	}
+#endif
 #endif
 	return _MALI_OSK_ERR_OK;
 }
@@ -68,10 +72,12 @@ _mali_osk_errcode_t _mali_osk_pm_dev_idle(void)
 /* NB: Function is not thread safe */
 _mali_osk_errcode_t _mali_osk_pm_dev_activate(void)
 {
+#if XPERIA_HAVE_NO_PM_RUNTIME
+have_runtime_reference = MALI_FALSE;
+#else
 #ifdef CONFIG_PM_RUNTIME
 	if (MALI_TRUE != have_runtime_reference)
 	{
-#if 0
 		int err;
 		//err = pm_runtime_get_sync(&(mali_gpu_device.dev));
 		if (0 > err)
@@ -79,9 +85,9 @@ _mali_osk_errcode_t _mali_osk_pm_dev_activate(void)
 			MALI_PRINT_ERROR(("OSK PM: pm_runtime_get_sync() returned error code %d\n", err));	
 			return _MALI_OSK_ERR_FAULT;
 		}
-#endif
 		have_runtime_reference = MALI_TRUE;
 	}
+#endif
 #endif
 	return _MALI_OSK_ERR_OK;
 }
