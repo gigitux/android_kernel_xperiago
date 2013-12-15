@@ -2752,6 +2752,8 @@ static inline void netdev_attach_ops(struct net_device *dev,
 
 #define netdev_notifier_info_to_dev(ndev) ndev
 
+#define mc_addr(ha) (ha)->addr
+
 #endif /* __KERNEL__ */
 
 #endif	/* _LINUX_NETDEVICE_H */

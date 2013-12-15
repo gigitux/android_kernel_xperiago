@@ -376,13 +376,6 @@ static ssize_t cw1200_wsm_dumps(struct file *file,
 	return count;
 }
 
-int simple_open(struct inode *inode, struct file *file)
-{
-	if (inode->i_private)
-		file->private_data = inode->i_private;
-	return 0;
-}
-
 static const struct file_operations fops_wsm_dumps = {
 	.open = simple_open,
 	.write = cw1200_wsm_dumps,

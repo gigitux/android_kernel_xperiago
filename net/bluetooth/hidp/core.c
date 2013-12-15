@@ -411,7 +411,7 @@ err:
 	mutex_unlock(&session->report_mutex);
 	return ret;
 }
-#else
+#elif (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,27))
 static int hidp_output_raw_report(struct hid_device *hid, unsigned char *data, size_t count)
 {
 	if (hidp_send_ctrl_message(hid->driver_data,
@@ -709,6 +709,87 @@ static void hidp_close(struct hid_device *hid)
 {
 }
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,27))
+static const struct {
+	__u16 idVendor;
+	__u16 idProduct;
+	unsigned quirks;
+} hidp_blacklist[] = {
+	/* Apple wireless Mighty Mouse */
+	{ 0x05ac, 0x030c, HID_QUIRK_MIGHTYMOUSE | HID_QUIRK_INVERT_HWHEEL },
+
+	{ }	/* Terminating entry */
+};
+static void hidp_setup_quirks(struct hid_device *hid)
+{
+	unsigned int n;
+
+	for (n = 0; hidp_blacklist[n].idVendor; n++)
+		if (hidp_blacklist[n].idVendor == le16_to_cpu(hid->vendor) &&
+				hidp_blacklist[n].idProduct == le16_to_cpu(hid->product))
+			hid->quirks = hidp_blacklist[n].quirks;
+}
+
+static int hidp_setup_hid(struct hidp_session *session,
+			  struct hidp_connadd_req *req)
+{
+	struct hid_device *hid;
+	struct hid_report *report;
+	bdaddr_t src, dst;
+	unsigned char *buf;
+
+	buf = kmalloc(req->rd_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (copy_from_user(buf, req->rd_data, req->rd_size)) {
+		kfree(buf);
+		return -EFAULT;
+	}
+
+	hid = hid_parse_report(buf, req->rd_size);
+	kfree(buf);
+	if (!session->hid)
+		return -EINVAL;
+
+	session->hid = hid;
+
+	hid->driver_data = session;
+
+	baswap(&src, &bt_sk(session->ctrl_sock->sk)->src);
+	baswap(&dst, &bt_sk(session->ctrl_sock->sk)->dst);
+
+	hid->bus     = BUS_BLUETOOTH;
+	hid->vendor  = req->vendor;
+	hid->product = req->product;
+	hid->version = req->version;
+	hid->country = req->country;
+
+	strlcpy(hid->name, req->name, 128);
+	strlcpy(hid->phys, batostr(&src), 64);
+	strlcpy(hid->uniq, batostr(&dst), 64);
+
+	hid->dev = hidp_get_device(session);
+	hid->hid_open  = hidp_open;
+	hid->hid_close = hidp_close;
+
+	hid->hidinput_input_event = hidp_hidinput_event;
+
+	hidp_setup_quirks(hid);
+
+	list_for_each_entry(report, &hid->report_enum[HID_INPUT_REPORT].report_list, list)
+		hidp_send_report(session, report);
+
+	list_for_each_entry(report, &hid->report_enum[HID_FEATURE_REPORT].report_list, list)
+		hidp_send_report(session, report);
+
+	if (hidinput_connect(hid) == 0)
+		hid->claimed |= HID_CLAIMED_INPUT;
+
+	return 0;
+}
+#else
+
 static int hidp_parse(struct hid_device *hid)
 {
 	struct hidp_session *session = hid->driver_data;
@@ -778,15 +859,17 @@ static int hidp_setup_hid(struct hidp_session *session,
 	strncpy(hid->name, req->name, sizeof(req->name) - 1);
 
 	snprintf(hid->phys, sizeof(hid->phys), "%pMR",
-		 &bt_sk(session->ctrl_sock->sk)->src);
+		 &l2cap_pi(session->ctrl_sock->sk)->chan->src);
 
 	snprintf(hid->uniq, sizeof(hid->uniq), "%pMR",
-		 &bt_sk(session->ctrl_sock->sk)->dst);
+		 &l2cap_pi(session->ctrl_sock->sk)->chan->dst);
 
 	hid->dev.parent = &session->conn->hcon->dev;
 	hid->ll_driver = &hidp_hid_driver;
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
 	hid->hid_get_raw_report = hidp_get_raw_report;
+#endif
 	hid->hid_output_raw_report = hidp_output_raw_report;
 
 	/* True if device is blacklisted in drivers/hid/hid-core.c */
@@ -804,6 +887,7 @@ fault:
 
 	return err;
 }
+#endif
 
 /* initialize session devices */
 static int hidp_session_dev_init(struct hidp_session *session,
@@ -867,7 +951,13 @@ static int hidp_session_dev_add(struct hidp_session *session)
 static void hidp_session_dev_del(struct hidp_session *session)
 {
 	if (session->hid) {
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,27))
 		hid_destroy_device(session->hid);
+#else
+		if (session->hid->claimed & HID_CLAIMED_INPUT)
+			hidinput_disconnect(session->hid);
+		hid_free_device(session->hid);
+#endif
 	} else if (session->input) {
 		input_unregister_device(session->input);
 	}
@@ -1295,23 +1385,29 @@ static int hidp_session_thread(void *arg)
 static int hidp_verify_sockets(struct socket *ctrl_sock,
 			       struct socket *intr_sock)
 {
+	struct l2cap_chan *ctrl_chan, *intr_chan;
 	struct bt_sock *ctrl, *intr;
 	struct hidp_session *session;
 
 	if (!l2cap_is_socket(ctrl_sock) || !l2cap_is_socket(intr_sock))
 		return -EINVAL;
 
+	ctrl_chan = l2cap_pi(ctrl_sock->sk)->chan;
+	intr_chan = l2cap_pi(intr_sock->sk)->chan;
+
+	if (bacmp(&ctrl_chan->src, &intr_chan->src) ||
+	    bacmp(&ctrl_chan->dst, &intr_chan->dst))
+		return -ENOTUNIQ;
+
 	ctrl = bt_sk(ctrl_sock->sk);
 	intr = bt_sk(intr_sock->sk);
 
-	if (bacmp(&ctrl->src, &intr->src) || bacmp(&ctrl->dst, &intr->dst))
-		return -ENOTUNIQ;
 	if (ctrl->sk.sk_state != BT_CONNECTED ||
 	    intr->sk.sk_state != BT_CONNECTED)
 		return -EBADFD;
 
 	/* early session check, we check again during session registration */
-	session = hidp_session_find(&ctrl->dst);
+	session = hidp_session_find(&ctrl_chan->dst);
 	if (session) {
 		hidp_session_put(session);
 		return -EEXIST;
@@ -1344,7 +1440,7 @@ int hidp_connection_add(struct hidp_connadd_req *req,
 	if (!conn)
 		return -EBADFD;
 
-	ret = hidp_session_new(&session, &bt_sk(ctrl_sock->sk)->dst, ctrl_sock,
+	ret = hidp_session_new(&session, &chan->dst, ctrl_sock,
 			       intr_sock, req, conn);
 	if (ret)
 		goto out_conn;
@@ -1425,36 +1521,6 @@ int hidp_get_conninfo(struct hidp_conninfo *ci)
 
 	return session ? 0 : -ENOENT;
 }
-
-/*
- * Copyright (c) 2013  Hauke Mehrtens <hauke@hauke-m.de>
- *
- * Backport functionality introduced in Linux 3.12.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- */
-
-#include <linux/export.h>
-#include <linux/hid.h>
-#include <linux/bug.h>
-
-/*
- * Allocator for buffer that is going to be passed to hid_output_report()
- */
-u8 *hid_alloc_report_buf(struct hid_report *report, gfp_t flags)
-{
-	/*
-	 * 7 extra bytes are necessary to achieve proper functionality
-	 * of implement() working on 8 byte chunks
-	 */
-
-	int len = ((report->size - 1) >> 3) + 1 + (report->id > 0) + 7;
-
-	return kmalloc(len, flags);
-}
-EXPORT_SYMBOL_GPL(hid_alloc_report_buf);
 
 static int __init hidp_init(void)
 {

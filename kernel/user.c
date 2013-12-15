@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/user_namespace.h>
+#include <linux/uidgid.h>
 
 /*
  * userns count is 1 for root user, 1 for init_uts_ns,

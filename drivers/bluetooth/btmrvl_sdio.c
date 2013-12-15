@@ -597,15 +597,14 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 	case HCI_SCODATA_PKT:
 	case HCI_EVENT_PKT:
 		bt_cb(skb)->pkt_type = type;
-		skb->dev = (void *)hdev;
 		skb_put(skb, buf_len);
 		skb_pull(skb, SDIO_HEADER_LEN);
 
 		if (type == HCI_EVENT_PKT) {
 			if (btmrvl_check_evtpkt(priv, skb))
-				hci_recv_frame(skb);
+				hci_recv_frame(hdev, skb);
 		} else {
-			hci_recv_frame(skb);
+			hci_recv_frame(hdev, skb);
 		}
 
 		hdev->stat.byte_rx += buf_len;
@@ -613,12 +612,11 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 
 	case MRVL_VENDOR_PKT:
 		bt_cb(skb)->pkt_type = HCI_VENDOR_PKT;
-		skb->dev = (void *)hdev;
 		skb_put(skb, buf_len);
 		skb_pull(skb, SDIO_HEADER_LEN);
 
 		if (btmrvl_process_event(priv, skb))
-			hci_recv_frame(skb);
+			hci_recv_frame(hdev, skb);
 
 		hdev->stat.byte_rx += buf_len;
 		break;
@@ -1046,12 +1044,6 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 		goto disable_host_int;
 	}
 
-	priv->btmrvl_dev.psmode = 1;
-	btmrvl_enable_ps(priv);
-
-	priv->btmrvl_dev.gpio_gap = 0xffff;
-	btmrvl_send_hscfg_cmd(priv);
-
 	return 0;
 
 disable_host_int:
@@ -1083,6 +1075,7 @@ static void btmrvl_sdio_remove(struct sdio_func *func)
 	}
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 static int btmrvl_sdio_suspend(struct device *dev)
 {
 	struct sdio_func *func = dev_to_sdio_func(dev);
@@ -1178,6 +1171,7 @@ static const struct dev_pm_ops btmrvl_sdio_pm_ops = {
 	.suspend	= btmrvl_sdio_suspend,
 	.resume		= btmrvl_sdio_resume,
 };
+#endif
 
 static struct sdio_driver bt_mrvl_sdio = {
 	.name		= "btmrvl_sdio",
@@ -1186,7 +1180,9 @@ static struct sdio_driver bt_mrvl_sdio = {
 	.remove		= btmrvl_sdio_remove,
 	.drv = {
 		.owner = THIS_MODULE,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 		.pm = &btmrvl_sdio_pm_ops,
+#endif
 	}
 };
 

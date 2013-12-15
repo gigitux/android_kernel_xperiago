@@ -763,7 +763,11 @@ static int rfcomm_tty_write_room(struct tty_struct *tty)
 	return room;
 }
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
 static int rfcomm_tty_ioctl(struct tty_struct *tty, unsigned int cmd, unsigned long arg)
+#else
+static int rfcomm_tty_ioctl(struct tty_struct *tty, struct file *filp, unsigned int cmd, unsigned long arg)
+#endif
 {
 	BT_DBG("tty %p cmd 0x%02x", tty, cmd);
 
@@ -810,7 +814,11 @@ static int rfcomm_tty_ioctl(struct tty_struct *tty, unsigned int cmd, unsigned l
 
 static void rfcomm_tty_set_termios(struct tty_struct *tty, struct ktermios *old)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0))
+	struct ktermios *new = &tty->termios;
+#else
 	struct ktermios *new = tty->termios;
+#endif
 	int old_baud_rate = tty_termios_baud_rate(old);
 	int new_baud_rate = tty_termios_baud_rate(new);
 
@@ -1016,7 +1024,11 @@ static void rfcomm_tty_hangup(struct tty_struct *tty)
 		tty_port_put(&dev->port);
 }
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
 static int rfcomm_tty_tiocmget(struct tty_struct *tty)
+#else
+static int rfcomm_tty_tiocmget(struct tty_struct *tty, struct file *filp)
+#endif
 {
 	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
 
@@ -1025,7 +1037,11 @@ static int rfcomm_tty_tiocmget(struct tty_struct *tty)
 	return dev->modem_status;
 }
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,38))
 static int rfcomm_tty_tiocmset(struct tty_struct *tty, unsigned int set, unsigned int clear)
+#else
+static int rfcomm_tty_tiocmset(struct tty_struct *tty, struct file *filp, unsigned int set, unsigned int clear)
+#endif
 {
 	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
 	struct rfcomm_dlc *dlc = dev->dlc;
