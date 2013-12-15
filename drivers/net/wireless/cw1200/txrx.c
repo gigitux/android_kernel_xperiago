@@ -911,10 +911,10 @@ void cw1200_tx_confirm_cb(struct cw1200_common *priv,
 		    arg->packet_id == priv->bss_loss_confirm_id) {
 			if (arg->status) {
 				/* Recovery failed */
-				__cw1200_cqm_bssloss_sm(priv, 0, 0, 1);
+				cw1200_cqm_bssloss_sm(priv, 0, 0, 1);
 			} else {
 				/* Recovery succeeded */
-				__cw1200_cqm_bssloss_sm(priv, 0, 1, 0);
+				cw1200_cqm_bssloss_sm(priv, 0, 1, 0);
 			}
 		}
 		spin_unlock(&priv->bss_loss_lock);

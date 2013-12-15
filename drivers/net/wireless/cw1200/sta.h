@@ -68,16 +68,8 @@ void cw1200_bss_params_work(struct work_struct *work);
 void cw1200_keep_alive_work(struct work_struct *work);
 void cw1200_tx_failure_work(struct work_struct *work);
 
-void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv, int init, int good,
+void cw1200_cqm_bssloss_sm(struct cw1200_common *priv, int init, int good,
 			     int bad);
-static inline void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
-					 int init, int good, int bad)
-{
-	spin_lock(&priv->bss_loss_lock);
-	__cw1200_cqm_bssloss_sm(priv, init, good, bad);
-	spin_unlock(&priv->bss_loss_lock);
-}
-
 /* ******************************************************************** */
 /* Internal API								*/
 

@@ -16,7 +16,6 @@
 #include "sta.h"
 #include "bh.h"
 #include "hwbus.h"
-#include <linux/sched.h>
 
 #define CW1200_BEACON_SKIPPING_MULTIPLIER 3
 

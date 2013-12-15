@@ -147,7 +147,7 @@ module_param(cw1200_bssloss_mitigation, int, 0644);
 MODULE_PARM_DESC(cw1200_bssloss_mitigation, "BSS Loss mitigation. 0 == disabled, 1 == enabled (default)");
 
 
-void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
+void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 			     int init, int good, int bad)
 {
 	int tx = 0;
@@ -155,11 +155,13 @@ void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 	priv->delayed_link_loss = 0;
 	cancel_work_sync(&priv->bss_params_work);
 
+	spin_lock(&priv->bss_loss_lock);
 	pr_debug("[STA] CQM BSSLOSS_SM: state: %d init %d good %d bad: %d txlock: %d uj: %d\n",
 		 priv->bss_loss_state,
 		 init, good, bad,
 		 atomic_read(&priv->tx_lock),
 		 priv->delayed_unjoin);
+	spin_unlock(&priv->bss_loss_lock);
 
 	/* If we have a pending unjoin */
 	if (priv->delayed_unjoin)
@@ -169,14 +171,18 @@ void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 		queue_delayed_work(priv->workqueue,
 				   &priv->bss_loss_work,
 				   HZ);
+		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state = 0;
+		spin_unlock(&priv->bss_loss_lock);
 
 		/* Skip the confimration procedure in P2P case */
 		if (!priv->vif->p2p && !atomic_read(&priv->tx_lock))
 			tx = 1;
 	} else if (good) {
 		cancel_delayed_work_sync(&priv->bss_loss_work);
+		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state = 0;
+		spin_unlock(&priv->bss_loss_lock);
 		queue_work(priv->workqueue, &priv->bss_params_work);
 	} else if (bad) {
 		/* XXX Should we just keep going until we time out? */
@@ -184,7 +190,9 @@ void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 			tx = 1;
 	} else {
 		cancel_delayed_work_sync(&priv->bss_loss_work);
+		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state = 0;
+		spin_unlock(&priv->bss_loss_lock);
 	}
 
 	/* Bypass mitigation if it's disabled */
@@ -195,7 +203,9 @@ void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 	if (tx) {
 		struct sk_buff *skb;
 
+		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state++;
+		spin_unlock(&priv->bss_loss_lock);
 
 		skb = ieee80211_nullfunc_get(priv->hw, priv->vif);
 		WARN_ON(!skb);

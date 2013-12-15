@@ -1580,17 +1580,6 @@ static bool wsm_handle_tx_data(struct cw1200_common *priv,
 	return handled;
 }
 
-/* get_random_int() was not exported for module use until 3.10-rc.
-   Implement it here in terms of the more expensive get_random_bytes()
- */
-unsigned int get_random_int(void)
-{
-	unsigned int r;
-	get_random_bytes(&r, sizeof(r));
-
-	return r;
-}
-
 static int cw1200_get_prio_queue(struct cw1200_common *priv,
 				 u32 link_id_map, int *total)
 {
