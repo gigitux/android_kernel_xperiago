@@ -42,13 +42,8 @@ int cw1200_set_rts_threshold(struct ieee80211_hw *hw, u32 value);
 
 void cw1200_flush(struct ieee80211_hw *hw, u32 queues, bool drop);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 u64 cw1200_prepare_multicast(struct ieee80211_hw *hw,
 			     struct netdev_hw_addr_list *mc_list);
-#else
-u64 cw1200_prepare_multicast(struct ieee80211_hw *dev, int mc_count,
-			     struct dev_addr_list *ha);
-#endif
 
 int cw1200_set_pm(struct cw1200_common *priv, const struct wsm_set_pm *arg);
 
@@ -68,8 +63,16 @@ void cw1200_bss_params_work(struct work_struct *work);
 void cw1200_keep_alive_work(struct work_struct *work);
 void cw1200_tx_failure_work(struct work_struct *work);
 
-void cw1200_cqm_bssloss_sm(struct cw1200_common *priv, int init, int good,
+void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv, int init, int good,
 			     int bad);
+static inline void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
+					 int init, int good, int bad)
+{
+	spin_lock(&priv->bss_loss_lock);
+	__cw1200_cqm_bssloss_sm(priv, init, good, bad);
+	spin_unlock(&priv->bss_loss_lock);
+}
+
 /* ******************************************************************** */
 /* Internal API								*/
 

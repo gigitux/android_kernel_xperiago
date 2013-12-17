@@ -147,7 +147,7 @@ module_param(cw1200_bssloss_mitigation, int, 0644);
 MODULE_PARM_DESC(cw1200_bssloss_mitigation, "BSS Loss mitigation. 0 == disabled, 1 == enabled (default)");
 
 
-void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
+void __cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 			     int init, int good, int bad)
 {
 	int tx = 0;
@@ -155,13 +155,11 @@ void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 	priv->delayed_link_loss = 0;
 	cancel_work_sync(&priv->bss_params_work);
 
-	spin_lock(&priv->bss_loss_lock);
 	pr_debug("[STA] CQM BSSLOSS_SM: state: %d init %d good %d bad: %d txlock: %d uj: %d\n",
 		 priv->bss_loss_state,
 		 init, good, bad,
 		 atomic_read(&priv->tx_lock),
 		 priv->delayed_unjoin);
-	spin_unlock(&priv->bss_loss_lock);
 
 	/* If we have a pending unjoin */
 	if (priv->delayed_unjoin)
@@ -171,18 +169,14 @@ void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 		queue_delayed_work(priv->workqueue,
 				   &priv->bss_loss_work,
 				   HZ);
-		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state = 0;
-		spin_unlock(&priv->bss_loss_lock);
 
 		/* Skip the confimration procedure in P2P case */
 		if (!priv->vif->p2p && !atomic_read(&priv->tx_lock))
 			tx = 1;
 	} else if (good) {
 		cancel_delayed_work_sync(&priv->bss_loss_work);
-		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state = 0;
-		spin_unlock(&priv->bss_loss_lock);
 		queue_work(priv->workqueue, &priv->bss_params_work);
 	} else if (bad) {
 		/* XXX Should we just keep going until we time out? */
@@ -190,9 +184,7 @@ void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 			tx = 1;
 	} else {
 		cancel_delayed_work_sync(&priv->bss_loss_work);
-		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state = 0;
-		spin_unlock(&priv->bss_loss_lock);
 	}
 
 	/* Bypass mitigation if it's disabled */
@@ -203,9 +195,7 @@ void cw1200_cqm_bssloss_sm(struct cw1200_common *priv,
 	if (tx) {
 		struct sk_buff *skb;
 
-		spin_lock(&priv->bss_loss_lock);
 		priv->bss_loss_state++;
-		spin_unlock(&priv->bss_loss_lock);
 
 		skb = ieee80211_nullfunc_get(priv->hw, priv->vif);
 		WARN_ON(!skb);
@@ -540,13 +530,8 @@ void cw1200_set_beacon_wakeup_period_work(struct work_struct *work)
 				     priv->join_dtim_period, 0);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 u64 cw1200_prepare_multicast(struct ieee80211_hw *hw,
 			     struct netdev_hw_addr_list *mc_list)
-#else
-u64 cw1200_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
-			     struct dev_addr_list *ha)
-#endif
 {
 	static u8 broadcast_ipv6[ETH_ALEN] = {
 		0x33, 0x33, 0x00, 0x00, 0x00, 0x01
@@ -555,16 +540,13 @@ u64 cw1200_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
 		0x01, 0x00, 0x5e, 0x00, 0x00, 0x01
 	};
 	struct cw1200_common *priv = hw->priv;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	struct netdev_hw_addr *ha;
-#endif
 	int count = 0;
 
 	/* Disable multicast filtering */
 	priv->has_multicast_subscription = false;
 	memset(&priv->multicast_filter, 0x00, sizeof(priv->multicast_filter));
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	if (netdev_hw_addr_list_count(mc_list) > WSM_MAX_GRP_ADDRTABLE_ENTRIES)
 		return 0;
 
@@ -578,26 +560,13 @@ u64 cw1200_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
 			priv->has_multicast_subscription = true;
 		count++;
 	}
-#else
-	while (ha &&
-	       count < mc_count &&
-	       count < WSM_MAX_GRP_ADDRTABLE_ENTRIES) {
-		memcpy(&priv->multicast_filter.macaddrs[count],
-		       ha->dmi_addr, ETH_ALEN);
-		if (memcmp(ha->dmi_addr, broadcast_ipv4, ETH_ALEN) &&
-		    memcmp(ha->dmi_addr, broadcast_ipv6, ETH_ALEN))
-			priv->has_multicast_subscription = true;
-		count++;
-		ha = ha->next;
-	}
-#endif
 
 	if (count) {
 		priv->multicast_filter.enable = __cpu_to_le32(1);
 		priv->multicast_filter.num_addrs = __cpu_to_le32(count);
 	}
 
-	return count;
+	return netdev_hw_addr_list_count(mc_list);
 }
 
 void cw1200_configure_filter(struct ieee80211_hw *dev,
