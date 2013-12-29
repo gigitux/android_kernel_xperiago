@@ -22,7 +22,7 @@
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
 #include <linux/spinlock.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
 #include <linux/shrinker.h>
 #endif
 
