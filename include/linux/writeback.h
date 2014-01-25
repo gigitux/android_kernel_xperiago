@@ -10,16 +10,16 @@
 /*
  * The 1/4 region under the global dirty thresh is for smooth dirty throttling:
  *
- *  (thresh - thresh/DIRTY_FULL_SCOPE, thresh)
+ *	(thresh - thresh/DIRTY_FULL_SCOPE, thresh)
  *
  * The 1/16 region above the global dirty limit will be put to maximum pauses:
  *
- *  (limit, limit + limit/DIRTY_MAXPAUSE_AREA)
+ *	(limit, limit + limit/DIRTY_MAXPAUSE_AREA)
  *
  * The 1/16 region above the max-pause region, dirty exceeded bdi's will be put
  * to loops:
  *
- *  (limit + limit/DIRTY_MAXPAUSE_AREA, limit + limit/DIRTY_PASSGOOD_AREA)
+ *	(limit + limit/DIRTY_MAXPAUSE_AREA, limit + limit/DIRTY_PASSGOOD_AREA)
  *
  * Further beyond, all dirtier tasks will enter a loop waiting (possibly long
  * time) for the dirty pages to drop, unless written enough pages.
@@ -29,15 +29,15 @@
  * knocks down the global dirty threshold quickly, in which case the global
  * dirty limit will follow down slowly to prevent livelocking all dirtier tasks.
  */
-#define DIRTY_SCOPE    8
-#define DIRTY_FULL_SCOPE  (DIRTY_SCOPE / 2)
-#define DIRTY_MAXPAUSE_AREA    16
-#define DIRTY_PASSGOOD_AREA    8
+#define DIRTY_SCOPE		8
+#define DIRTY_FULL_SCOPE	(DIRTY_SCOPE / 2)
+#define DIRTY_MAXPAUSE_AREA		16
+#define DIRTY_PASSGOOD_AREA		8
 
 /*
  * 4MB minimal write chunk size
  */
-#define MIN_WRITEBACK_PAGES  (4096UL >> (PAGE_CACHE_SHIFT - 10))
+#define MIN_WRITEBACK_PAGES	(4096UL >> (PAGE_CACHE_SHIFT - 10))
 
 struct backing_dev_info;
 
@@ -160,7 +160,7 @@ unsigned long bdi_dirty_limit(struct backing_dev_info *bdi,
 			       unsigned long dirty);
 
 void __bdi_update_bandwidth(struct backing_dev_info *bdi,
-          unsigned long start_time);
+			    unsigned long start_time);
 
 void page_writeback_init(void);
 void balance_dirty_pages_ratelimited_nr(struct address_space *mapping,
