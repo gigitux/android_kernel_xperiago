@@ -47,13 +47,13 @@ static void sync_supers_timer_fn(unsigned long);
 
 void bdi_lock_two(struct bdi_writeback *wb1, struct bdi_writeback *wb2)
 {
-         if (wb1 < wb2) {
-            spin_lock(&wb1->list_lock);
-            spin_lock_nested(&wb2->list_lock, 1);
-         } else {
-            spin_lock(&wb2->list_lock);
-            spin_lock_nested(&wb1->list_lock, 1);
-         }
+	if (wb1 < wb2) {
+		spin_lock(&wb1->list_lock);
+		spin_lock_nested(&wb2->list_lock, 1);
+	} else {
+		spin_lock(&wb2->list_lock);
+		spin_lock_nested(&wb1->list_lock, 1);
+	}
 }
 
 #ifdef CONFIG_DEBUG_FS
@@ -85,7 +85,7 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
 		nr_io++;
 	list_for_each_entry(inode, &wb->b_more_io, i_wb_list)
 		nr_more_io++;
-	 spin_unlock(&wb->list_lock);
+	spin_unlock(&wb->list_lock);
 
 	global_dirty_limits(&background_thresh, &dirty_thresh);
 	bdi_thresh = bdi_dirty_limit(bdi, dirty_thresh);
@@ -640,14 +640,14 @@ static void bdi_wb_init(struct bdi_writeback *wb, struct backing_dev_info *bdi)
 	INIT_LIST_HEAD(&wb->b_dirty);
 	INIT_LIST_HEAD(&wb->b_io);
 	INIT_LIST_HEAD(&wb->b_more_io);
-        spin_lock_init(&wb->list_lock);
+	spin_lock_init(&wb->list_lock);
 	setup_timer(&wb->wakeup_timer, wakeup_timer_fn, (unsigned long)bdi);
 }
 
 /*
  * Initial write bandwidth: 100 MB/s
  */
-#define INIT_BW    (100 << (20 - PAGE_SHIFT))
+#define INIT_BW		(100 << (20 - PAGE_SHIFT))
 
 int bdi_init(struct backing_dev_info *bdi)
 {
@@ -672,11 +672,11 @@ int bdi_init(struct backing_dev_info *bdi)
 
 	bdi->dirty_exceeded = 0;
 
-        bdi->bw_time_stamp = jiffies;
-        bdi->written_stamp = 0;
+	bdi->bw_time_stamp = jiffies;
+	bdi->written_stamp = 0;
 
-        bdi->write_bandwidth = INIT_BW;
-        bdi->avg_write_bandwidth = INIT_BW;
+	bdi->write_bandwidth = INIT_BW;
+	bdi->avg_write_bandwidth = INIT_BW;
 
 	err = prop_local_init_percpu(&bdi->completions);
 
@@ -706,7 +706,7 @@ void bdi_destroy(struct backing_dev_info *bdi)
 		list_splice(&bdi->wb.b_io, &dst->b_io);
 		list_splice(&bdi->wb.b_more_io, &dst->b_more_io);
 		spin_unlock(&bdi->wb.list_lock);
-                spin_unlock(&dst->list_lock);
+		spin_unlock(&dst->list_lock);
 	}
 
 	bdi_unregister(bdi);
@@ -809,20 +809,6 @@ long congestion_wait(int sync, long timeout)
 	return ret;
 }
 EXPORT_SYMBOL(congestion_wait);
-
-long congestion_wait_kswapd(int sync, long timeout)
-{
-	long ret;
-	DEFINE_WAIT(wait);
-	wait_queue_head_t *wqh = &congestion_wqh[sync];
-
-	prepare_to_wait(wqh, &wait, TASK_UNINTERRUPTIBLE);
-	ret = schedule_timeout(timeout);
-	finish_wait(wqh, &wait);
-
-	return ret;
-}
-EXPORT_SYMBOL(congestion_wait_kswapd);
 
 /**
  * wait_iff_congested - Conditionally wait for a backing_dev to become uncongested or a zone to complete writes
