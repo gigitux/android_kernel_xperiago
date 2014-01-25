@@ -121,6 +121,7 @@ EXPORT_SYMBOL(laptop_mode);
 
 /* End of sysctl-exported parameters */
 
+unsigned long global_dirty_limit;
 
 /*
  * Scale the writeback cache size proportional to the relative writeout speeds.
