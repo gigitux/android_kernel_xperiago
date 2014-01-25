@@ -57,7 +57,7 @@ struct bdi_writeback {
 	struct list_head b_dirty;	/* dirty inodes */
 	struct list_head b_io;		/* parked for writeback */
 	struct list_head b_more_io;	/* parked for more writeback */
-        spinlock_t list_lock;    /* protects the b_* lists */
+	spinlock_t list_lock;		/* protects the b_* lists */
 };
 
 struct backing_dev_info {
@@ -72,10 +72,10 @@ struct backing_dev_info {
 
 	struct percpu_counter bdi_stat[NR_BDI_STAT_ITEMS];
 
-        unsigned long bw_time_stamp;  /* last time write bw is updated */
-        unsigned long written_stamp;  /* pages written at bw_time_stamp */
-        unsigned long write_bandwidth;  /* the estimated write bandwidth */
-        unsigned long avg_write_bandwidth; /* further smoothed write bw */
+	unsigned long bw_time_stamp;	/* last time write bw is updated */
+	unsigned long written_stamp;	/* pages written at bw_time_stamp */
+	unsigned long write_bandwidth;	/* the estimated write bandwidth */
+	unsigned long avg_write_bandwidth; /* further smoothed write bw */
 
 	struct prop_local_percpu completions;
 	int dirty_exceeded;
@@ -290,7 +290,6 @@ enum {
 void clear_bdi_congested(struct backing_dev_info *bdi, int sync);
 void set_bdi_congested(struct backing_dev_info *bdi, int sync);
 long congestion_wait(int sync, long timeout);
-long congestion_wait_kswapd(int sync, long timeout);
 long wait_iff_congested(struct zone *zone, int sync, long timeout);
 
 static inline bool bdi_cap_writeback_dirty(struct backing_dev_info *bdi)
