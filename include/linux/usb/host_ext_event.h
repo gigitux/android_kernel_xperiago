@@ -22,3 +22,4 @@ enum usb_host_ext_event {
 extern int host_send_uevent(enum usb_host_ext_event event);
 
 #endif
+

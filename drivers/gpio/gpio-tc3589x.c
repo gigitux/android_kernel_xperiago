@@ -387,3 +387,4 @@ module_exit(tc3589x_gpio_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("TC3589x GPIO driver");
 MODULE_AUTHOR("Hanumath Prasad, Rabin Vincent");
+

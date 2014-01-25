@@ -67,3 +67,4 @@ static inline void pcie_aspm_remove_sysfs_dev_files(struct pci_dev *pdev)
 }
 #endif
 #endif /* LINUX_ASPM_H */
+

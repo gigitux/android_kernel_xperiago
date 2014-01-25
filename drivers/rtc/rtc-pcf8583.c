@@ -336,3 +336,4 @@ module_exit(pcf8583_exit);
 MODULE_AUTHOR("Russell King");
 MODULE_DESCRIPTION("PCF8583 I2C RTC driver");
 MODULE_LICENSE("GPL");
+
