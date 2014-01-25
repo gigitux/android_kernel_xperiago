@@ -181,9 +181,9 @@ void bdi_start_background_writeback(struct backing_dev_info *bdi)
  */
 void inode_wb_list_del(struct inode *inode)
 {
-        struct backing_dev_info *bdi = inode_to_bdi(inode);
+	struct backing_dev_info *bdi = inode_to_bdi(inode);
 
-        spin_lock(&bdi->wb.list_lock)
+	spin_lock(&bdi->wb.list_lock);
 	list_del_init(&inode->i_wb_list);
 	spin_unlock(&bdi->wb.list_lock);
 }
@@ -199,7 +199,7 @@ void inode_wb_list_del(struct inode *inode)
  */
 static void redirty_tail(struct inode *inode, struct bdi_writeback *wb)
 {
-        assert_spin_locked(&wb->list_lock);
+	assert_spin_locked(&wb->list_lock);
 	if (!list_empty(&wb->b_dirty)) {
 		struct inode *tail;
 
@@ -215,7 +215,7 @@ static void redirty_tail(struct inode *inode, struct bdi_writeback *wb)
  */
 static void requeue_io(struct inode *inode, struct bdi_writeback *wb)
 {
-        assert_spin_locked(&wb->list_lock);
+	assert_spin_locked(&wb->list_lock);
 	list_move(&inode->i_wb_list, &wb->b_more_io);
 }
 
@@ -315,7 +315,7 @@ static int write_inode(struct inode *inode, struct writeback_control *wbc)
  * Wait for writeback on an inode to complete.
  */
 static void inode_wait_for_writeback(struct inode *inode,
-             struct bdi_writeback *wb)
+				     struct bdi_writeback *wb)
 {
 	DEFINE_WAIT_BIT(wq, &inode->i_state, __I_SYNC);
 	wait_queue_head_t *wqh;
@@ -343,7 +343,7 @@ static void inode_wait_for_writeback(struct inode *inode,
  */
 static int
 writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
-           struct writeback_control *wbc)
+		       struct writeback_control *wbc)
 {
 	struct address_space *mapping = inode->i_mapping;
 	unsigned dirty;
@@ -588,7 +588,7 @@ void writeback_inodes_wb(struct bdi_writeback *wb,
 		wbc->wb_start = jiffies; /* livelock avoidance */
 	spin_lock(&wb->list_lock);
 
-        if (list_empty(&wb->b_io))
+	if (list_empty(&wb->b_io))
 		queue_io(wb, wbc->older_than_this);
 
 	while (!list_empty(&wb->b_io)) {
@@ -614,8 +614,8 @@ static void __writeback_inodes_sb(struct super_block *sb,
 {
 	WARN_ON(!rwsem_is_locked(&sb->s_umount));
 
-        spin_lock(&wb->list_lock);
-        if (list_empty(&wb->b_io))
+	spin_lock(&wb->list_lock);
+	if (list_empty(&wb->b_io))
 		queue_io(wb, wbc->older_than_this);
 	writeback_sb_inodes(sb, wb, wbc, true);
 	spin_unlock(&wb->list_lock);
@@ -645,9 +645,9 @@ static inline bool over_bground_thresh(void)
  * only the flusher working on the first wb should do it.
  */
 static void wb_update_bandwidth(struct bdi_writeback *wb,
-        unsigned long start_time)
+				unsigned long start_time)
 {
-  __bdi_update_bandwidth(wb->bdi, start_time);
+	__bdi_update_bandwidth(wb->bdi, start_time);
 }
 
 /*
@@ -676,7 +676,7 @@ static long wb_writeback(struct bdi_writeback *wb,
 		.for_background		= work->for_background,
 		.range_cyclic		= work->range_cyclic,
 	};
-        unsigned long wb_start = jiffies;
+	unsigned long wb_start = jiffies;
 	unsigned long oldest_jif;
 	long wrote = 0;
 	long write_chunk = MAX_WRITEBACK_PAGES;
@@ -1314,7 +1314,7 @@ EXPORT_SYMBOL(sync_inodes_sb);
  */
 int write_inode_now(struct inode *inode, int sync)
 {
-        struct bdi_writeback *wb = &inode_to_bdi(inode)->wb;
+	struct bdi_writeback *wb = &inode_to_bdi(inode)->wb;
 	int ret;
 	struct writeback_control wbc = {
 		.nr_to_write = LONG_MAX,
@@ -1351,7 +1351,7 @@ EXPORT_SYMBOL(write_inode_now);
  */
 int sync_inode(struct inode *inode, struct writeback_control *wbc)
 {
-        struct bdi_writeback *wb = &inode_to_bdi(inode)->wb;
+	struct bdi_writeback *wb = &inode_to_bdi(inode)->wb;
 	int ret;
 
 	spin_lock(&wb->list_lock);
